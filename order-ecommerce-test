@@ -1,0 +1,71 @@
+import redis
+import boto3
+import uuid
+from datetime import datetime
+
+# Initialize AWS DynamoDB client
+
+dynamodb = boto3.resource('dynamodb')
+
+# DynamoDB table named 'Orders'
+
+table = dynamodb.Table('Orders')  
+
+# Initialize Redis client (connect to local Redis server)
+
+r = redis.Redis(host='localhost', port=6379, db=0)
+
+def create_order(customer_name, product_name, quantity, price_per_unit):
+    
+    # Generate a unique order ID
+
+    order_id = str(uuid.uuid4())
+    
+    # Calculate total price
+
+    total_price = quantity * price_per_unit
+
+    # Order data
+    order_data = {
+        'order_id': order_id,
+        'customer_name': customer_name,
+        'product_name': product_name,
+        'quantity': quantity,
+        'price_per_unit': price_per_unit,
+        'total_price': total_price,
+        'order_date': datetime.now().isoformat()
+    }
+
+    # Store order in Redis cache
+    r.set(order_id, str(order_data))
+    print(f"Order stored in Redis with order ID: {order_id}")
+    
+    # Save order to DynamoDB for persistent storage
+    table.put_item(Item=order_data)
+    print(f"Order saved to DynamoDB with order ID: {order_id}")
+    
+    return order_id, order_data
+
+def get_order_from_redis(order_id):
+    # Retrieve order data from Redis
+    order_data = r.get(order_id)
+    if order_data:
+        print(f"Order retrieved from Redis: {order_data}")
+        return order_data
+    else:
+        print(f"Order with ID {order_id} not found in Redis.")
+        return None
+
+def get_order_from_dynamodb(order_id):
+    # Retrieve order from DynamoDB
+    try:
+        response = table.get_item(Key={'order_id': order_id})
+        if 'Item' in response:
+            print(f"Order retrieved from DynamoDB: {response['Item']}")
+            return response['Item']
+        else:
+            print(f"Order with ID {order_id} not found in DynamoDB.")
+            return None
+    except Exception as e:
+        print(f"Error retrieving order from DynamoDB: {str(e)}")
+        return None
